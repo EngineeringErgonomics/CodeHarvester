@@ -49,18 +49,17 @@ impl CodeStructure {
     }
 
     pub fn get_name(&self) -> String {
-    let content = self.get_content();
-    let keyword_end = content.find(|c: char| c.is_whitespace()).unwrap();
-    let name_start = content[keyword_end..]
-        .find(|c: char| c.is_alphabetic())
-        .unwrap()
-        + keyword_end;
-    let name_end = content[name_start..]
-        .find(|c: char| !c.is_alphanumeric() && c != '_')
-        .unwrap();
-    content[name_start..name_start + name_end].to_string()
-}
-
+        let content = self.get_content();
+        let keyword_end = content.find(|c: char| c.is_whitespace()).unwrap();
+        let name_start = content[keyword_end..]
+            .find(|c: char| c.is_alphabetic())
+            .unwrap()
+            + keyword_end;
+        let name_end = content[name_start..]
+            .find(|c: char| !c.is_alphanumeric() && c != '_')
+            .unwrap();
+        content[name_start..name_start + name_end].to_string()
+    }
 
     pub fn get_type(&self) -> &str {
         match self {
