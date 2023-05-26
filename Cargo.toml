@@ -9,6 +9,7 @@ edition = "2021"
 regex = "1.5.4"
 tiktoken-rs = "0.4.2"
 rust_search = "2.0.0"
+tempfile = "3.5.0"
 
 [dev-dependencies]
 mockall = "0.11.2"
@@ -23,5 +24,9 @@ rand = "0.8"
 path = "code_harvester/src/lib.rs"
 
 [[test]]
-name = "python_code_parser_tests"
-path = "code_harvester/tests/python_code_parser_tests.rs"
+name = "test_python_code_parser"
+path = "code_harvester/tests/test_python_code_parser.rs"
+
+[[test]]
+name = "test_export_code_structures"
+path = "code_harvester/tests/test_export_code_structures.rs"
