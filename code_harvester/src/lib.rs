@@ -1,14 +1,5 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod code_structures;
+pub mod python_code_parser;
+pub use python_code_parser::extract_code_structures;
+pub use python_code_parser::parse_python_code;
+pub use python_code_parser::read_file_and_parse;

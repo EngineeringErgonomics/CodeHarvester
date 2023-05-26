@@ -1,0 +1,27 @@
+[package]
+name = "code_harvester"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+regex = "1.5.4"
+tiktoken-rs = "0.4.2"
+rust_search = "2.0.0"
+
+[dev-dependencies]
+mockall = "0.11.2"
+proptest = "1.1.0"
+cucumber = "0.19.1"
+opentelemetry = "0.19.0"
+cargo-tarpaulin = "0.25.2"
+fake = { version = "2.6", features=['derive']}
+rand = "0.8"
+
+[lib]
+path = "code_harvester/src/lib.rs"
+
+[[test]]
+name = "python_code_parser_tests"
+path = "code_harvester/tests/python_code_parser_tests.rs"
