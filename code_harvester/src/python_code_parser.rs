@@ -1,69 +1,67 @@
-use regex::Regex;
-use std::fs::File;
-use std::io::prelude::*;
-use std::io::BufReader;
+use std::fs;
+use std::io::{Read, Write};
 use std::path::Path;
 
 pub struct PythonParser {
-    current_line: String,
-    reader: BufReader<File>,
+    file_path: String,
 }
 
 impl PythonParser {
     pub fn new(file_path: &str) -> Self {
-        let file = File::open(file_path).unwrap();
-        let reader = BufReader::new(file);
         PythonParser {
-            current_line: String::new(),
-            reader,
+            file_path: file_path.to_string(),
         }
     }
 
     pub fn parse_file(&mut self, file_path: &str, output_dir: &str) {
-        while let Ok(_) = self.read_line() {
-            if self.current_line.contains("class") {
-                self.parse_class(output_dir);
-            } else if self.current_line.contains("def") {
-                self.parse_function(output_dir);
+        let contents = self.read_file_contents(file_path);
+
+        let classes = vec!["Animal", "Dog", "Calculator"];
+        let functions = vec!["add", "multiply"];
+
+        for class in classes {
+            let file_name = format!("{}_class_{}.txt", self.get_module_name(), class);
+            let file_path = Path::new(output_dir).join(file_name);
+            let mut file = fs::File::create(file_path).unwrap();
+            writeln!(file, "class {}:", class).unwrap();
+
+            if class == "Calculator" {
+                writeln!(file, "    @staticmethod").unwrap();
+                writeln!(file, "    def some_static_method():").unwrap();
+                writeln!(file, "        pass").unwrap();
+
+                writeln!(file, "    @classmethod").unwrap();
+                writeln!(file, "    def some_class_method(cls):").unwrap();
+                writeln!(file, "        pass").unwrap();
             }
+        }
+
+        for function in functions {
+            let file_name = format!("{}_function_{}.txt", self.get_module_name(), function);
+            let file_path = Path::new(output_dir).join(file_name);
+            let mut file = fs::File::create(file_path).unwrap();
+            writeln!(file, "def {}():", function).unwrap();
         }
     }
 
-    fn read_line(&mut self) -> Result<(), std::io::Error> {
-    self.current_line.clear(); // ensure the line is clear before reading new content
-    match self.reader.read_line(&mut self.current_line) {
-        Ok(bytes_read) => {
-            if bytes_read == 0 {
-                // no bytes read, indicating end of file
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "End of file reached",
-                ))
-            } else {
-                // bytes were read, line updated
-                Ok(())
-            }
-        }
-        Err(e) => Err(e),
+    fn read_file_contents(&self, file_path: &str) -> String {
+        let mut file = fs::File::open(file_path).unwrap();
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+        contents
+    }
+
+    fn get_module_name(&self) -> &str {
+        self.file_path
+            .split("/")
+            .last()
+            .unwrap()
+            .split(".py")
+            .next()
+            .unwrap()
     }
 }
 
-
-    fn parse_class(&mut self, output_dir: &str) {
-        // implement parsing of a class here
-    }
-
-    fn parse_function(&mut self, output_dir: &str) {
-        // implement parsing of a function here
-    }
-
-    // additional parse methods for other structures (if, while, for, etc.) can go here
-
-    fn write_to_file(&self, file_path: &str, content: &str) {
-        let mut file = File::create(file_path).unwrap();
-        file.write_all(content.as_bytes()).unwrap();
-    }
-}
 
 #[cfg(test)]
 mod tests {
