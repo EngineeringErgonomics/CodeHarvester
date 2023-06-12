@@ -1,3 +1,6 @@
+use crate::code_structures::CodeStructure;
+use indoc::indoc;
+use regex::{Match, Regex};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -16,32 +19,72 @@ impl PythonParser {
     pub fn parse_file(&mut self, file_path: &str, output_dir: &str) {
         let contents = self.read_file_contents(file_path);
 
-        let classes = vec!["Animal", "Dog", "Calculator"];
-        let functions = vec!["add", "multiply"];
+        let class_pattern = Regex::new(r"(?m)^class\s+(\w+)").unwrap();
+        let function_pattern = Regex::new(r"(?m)^def\s+(\w+)").unwrap();
 
-        for class in classes {
-            let file_name = format!("{}_class_{}.txt", self.get_module_name(), class);
-            let file_path = Path::new(output_dir).join(file_name);
-            let mut file = fs::File::create(file_path).unwrap();
-            writeln!(file, "class {}:", class).unwrap();
+        let mut class_or_function_iter = class_pattern
+            .find_iter(&contents)
+            .map(|m| (m.start(), m.end()))
+            .chain(
+                function_pattern
+                    .find_iter(&contents)
+                    .map(|m| (m.start(), m.end())),
+            )
+            .collect::<Vec<_>>();
 
-            if class == "Calculator" {
-                writeln!(file, "    @staticmethod").unwrap();
-                writeln!(file, "    def some_static_method():").unwrap();
-                writeln!(file, "        pass").unwrap();
+        class_or_function_iter.push((contents.len(), contents.len()));
+        class_or_function_iter.sort_by_key(|&(start, _)| start);
 
-                writeln!(file, "    @classmethod").unwrap();
-                writeln!(file, "    def some_class_method(cls):").unwrap();
-                writeln!(file, "        pass").unwrap();
+        for i in 0..(class_or_function_iter.len() - 1) {
+            let start = class_or_function_iter[i].0;
+            let end = class_or_function_iter[i + 1].0;
+            let content = &contents[start..end];
+
+            let is_class = class_pattern.is_match(content);
+            let is_function = function_pattern.is_match(content);
+
+            if is_class || is_function {
+                let name = if is_class {
+                    class_pattern
+                        .captures(content)
+                        .unwrap()
+                        .get(1)
+                        .unwrap()
+                        .as_str()
+                } else {
+                    function_pattern
+                        .captures(content)
+                        .unwrap()
+                        .get(1)
+                        .unwrap()
+                        .as_str()
+                };
+
+                let file_name = format!(
+                    "{}_{}_{}.txt",
+                    self.get_module_name(),
+                    if is_class { "class" } else { "function" },
+                    name
+                );
+                let file_path = Path::new(output_dir).join(file_name);
+                let mut file = fs::File::create(file_path).unwrap();
+                writeln!(file, "{}", Self::unindent(content)).unwrap();
             }
         }
+    }
 
-        for function in functions {
-            let file_name = format!("{}_function_{}.txt", self.get_module_name(), function);
-            let file_path = Path::new(output_dir).join(file_name);
-            let mut file = fs::File::create(file_path).unwrap();
-            writeln!(file, "def {}():", function).unwrap();
-        }
+    fn unindent(s: &str) -> String {
+        let min_indent = s
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.chars().take_while(|c| c.is_whitespace()).count())
+            .min()
+            .unwrap_or(0);
+
+        s.lines()
+            .map(|line| line.get(min_indent..).unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn read_file_contents(&self, file_path: &str) -> String {
@@ -61,7 +104,6 @@ impl PythonParser {
             .unwrap()
     }
 }
-
 
 #[cfg(test)]
 mod tests {
