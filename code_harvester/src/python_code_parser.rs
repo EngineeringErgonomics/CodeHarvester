@@ -1,6 +1,4 @@
-use crate::code_structures::CodeStructure;
-use indoc::indoc;
-use regex::{Match, Regex};
+use regex::Regex;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -127,7 +125,7 @@ mod tests {
 
         // The module name can be extracted from the file_path,
         let module_name = file_path
-            .split("/")
+            .split('/')
             .last()
             .unwrap()
             .split(".py")
