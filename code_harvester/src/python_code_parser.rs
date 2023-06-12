@@ -1,155 +1,190 @@
 use crate::code_structures::CodeStructure;
-use regex::Regex;
+use indoc::indoc;
+use regex::{Match, Regex};
+use std::fs;
+use std::io::{Read, Write};
+use std::path::Path;
 
-/// Tokenizes the input Python code and returns a vector of tokens.
-pub fn parse_python_code(input: &str) -> Vec<String> {
-    let token_pattern = r#"[a-zA-Z_]\w*|\d+|\S"#;
-    let re = Regex::new(token_pattern).unwrap();
-    re.find_iter(input)
-        .map(|m| m.as_str().to_string())
-        .collect()
+pub struct PythonParser {
+    file_path: String,
 }
 
-/// Reads the content of a file, tokenizes the Python code, and returns a vector of tokens.
-pub fn read_file_and_parse(file_path: &str) -> Vec<String> {
-    let file_content = std::fs::read_to_string(file_path).unwrap();
-    // print parsed out
-    println!("Python Code: {:?}", parse_python_code(&file_content));
-    parse_python_code(&file_content)
-}
-
-/// Extracts code structures (classes and functions) from the input Python code and returns a vector of CodeStructure.
-pub fn extract_code_structures(input: &str) -> Vec<CodeStructure> {
-    let mut structures = Vec::new();
-    let mut stack: Vec<(usize, String, Context)> = Vec::new();
-
-    #[derive(Clone, PartialEq)]
-    enum Context {
-        Class,
-        Function,
-    }
-
-    let mut lines = input.lines().collect::<Vec<_>>();
-    lines.push(""); // push an empty line to handle the last code structure
-    for (i, line) in lines.iter().enumerate() {
-        let current_indent_level = line.chars().take_while(|c| *c == ' ').count();
-
-        while let Some((indent, _, _)) = stack.last() {
-            if *indent <= current_indent_level {
-                break;
-            }
-            let (indent, structure, _context) = stack.pop().unwrap();
-            if indent == 0 {
-                structures.push(CodeStructure::from_code_string(&structure.trim_end()));
-            } else if let Some((_, parent, _)) = stack.last_mut() {
-                parent.push_str(&structure);
-                parent.push('\n');
-            }
-        }
-
-        if !line.trim().is_empty() {
-            let mut line_to_push = line.to_string();
-            let current_context = if line.trim().starts_with("class") {
-                Context::Class
-            } else if line.trim().starts_with("def") {
-                Context::Function
-            } else {
-                stack
-                    .last()
-                    .map(|(_, _, context)| context.clone())
-                    .unwrap_or_else(|| Context::Function)
-            };
-
-            // if the next line is not the last line and has greater indentation, append a newline to the current line
-            if i < lines.len() - 1
-                && lines[i + 1].chars().take_while(|c| *c == ' ').count() > current_indent_level
-            {
-                line_to_push.push('\n');
-            }
-            stack.push((current_indent_level, line_to_push, current_context));
+impl PythonParser {
+    pub fn new(file_path: &str) -> Self {
+        PythonParser {
+            file_path: file_path.to_string(),
         }
     }
 
-    // Pop the remaining items in the stack
-    while let Some((indent, structure, _)) = stack.pop() {
-        if indent == 0 {
-            structures.push(CodeStructure::from_code_string(structure.trim_end()));
-        } else if let Some((_, parent, _)) = stack.last_mut() {
-            parent.push_str(&structure);
-            parent.push('\n');
+    pub fn parse_file(&mut self, file_path: &str, output_dir: &str) {
+        let contents = self.read_file_contents(file_path);
+
+        let class_pattern = Regex::new(r"(?m)^class\s+(\w+)").unwrap();
+        let function_pattern = Regex::new(r"(?m)^def\s+(\w+)").unwrap();
+
+        let mut class_or_function_iter = class_pattern
+            .find_iter(&contents)
+            .map(|m| (m.start(), m.end()))
+            .chain(
+                function_pattern
+                    .find_iter(&contents)
+                    .map(|m| (m.start(), m.end())),
+            )
+            .collect::<Vec<_>>();
+
+        class_or_function_iter.push((contents.len(), contents.len()));
+        class_or_function_iter.sort_by_key(|&(start, _)| start);
+
+        for i in 0..(class_or_function_iter.len() - 1) {
+            let start = class_or_function_iter[i].0;
+            let end = class_or_function_iter[i + 1].0;
+            let content = &contents[start..end];
+
+            let is_class = class_pattern.is_match(content);
+            let is_function = function_pattern.is_match(content);
+
+            if is_class || is_function {
+                let name = if is_class {
+                    class_pattern
+                        .captures(content)
+                        .unwrap()
+                        .get(1)
+                        .unwrap()
+                        .as_str()
+                } else {
+                    function_pattern
+                        .captures(content)
+                        .unwrap()
+                        .get(1)
+                        .unwrap()
+                        .as_str()
+                };
+
+                let file_name = format!(
+                    "{}_{}_{}.txt",
+                    self.get_module_name(),
+                    if is_class { "class" } else { "function" },
+                    name
+                );
+                let file_path = Path::new(output_dir).join(file_name);
+                let mut file = fs::File::create(file_path).unwrap();
+                writeln!(file, "{}", Self::unindent(content)).unwrap();
+            }
         }
     }
 
-    structures
+    fn unindent(s: &str) -> String {
+        let min_indent = s
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.chars().take_while(|c| c.is_whitespace()).count())
+            .min()
+            .unwrap_or(0);
+
+        s.lines()
+            .map(|line| line.get(min_indent..).unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn read_file_contents(&self, file_path: &str) -> String {
+        let mut file = fs::File::open(file_path).unwrap();
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+        contents
+    }
+
+    fn get_module_name(&self) -> &str {
+        self.file_path
+            .split("/")
+            .last()
+            .unwrap()
+            .split(".py")
+            .next()
+            .unwrap()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::io::Write;
+    use std::fs;
+    use std::io::Read;
 
     #[test]
-    fn test_parser_tokenize() {
-        let input = "def foo():\n    return 42";
-        let expected_tokens = vec!["def", "foo", "(", ")", ":", "return", "42"];
+    fn test_python_code_parser() {
+        // The path to our Python file
+        let file_path = "code_harvester/samples/integration_sample.py";
 
-        let tokens = parse_python_code(input);
-        assert_eq!(tokens, expected_tokens);
-    }
+        // Create an instance of our Python parser
+        let mut parser = PythonParser::new(file_path);
 
-    #[test]
-    fn test_read_file_and_parse() {
-        // Create a temporary Python file for testing
-        let temp_file_path = "temp_test_file.py";
-        let temp_file_content = "def foo():\n    return 42";
-        let mut temp_file = File::create(temp_file_path).unwrap();
-        temp_file.write_all(temp_file_content.as_bytes()).unwrap();
+        // The directory where our parsed structures should be stored
+        let output_dir = "code_harvester/tests/output";
 
-        // Function to read the contents of a file and pass it to the parse_python_code function
-        fn read_file_and_parse(file_path: &str) -> Vec<String> {
-            let file_content = std::fs::read_to_string(file_path).unwrap();
-            parse_python_code(&file_content)
+        // Parse the Python file
+        parser.parse_file(file_path, output_dir);
+
+        // The module name can be extracted from the file_path,
+        let module_name = file_path
+            .split("/")
+            .last()
+            .unwrap()
+            .split(".py")
+            .next()
+            .unwrap();
+
+        // Now, we need to verify that our parser did its job correctly
+        let classes = vec!["Animal", "Dog", "Calculator"];
+        let functions = vec!["add", "multiply"];
+
+        for class in classes {
+            // The expected path to the .txt file for this class
+            let expected_file_path = format!("{}/{}_class_{}.txt", output_dir, module_name, class);
+
+            // Check that the .txt file exists
+            assert!(fs::metadata(&expected_file_path).is_ok());
+
+            // Open the file and read its contents
+            let mut file = fs::File::open(&expected_file_path).unwrap();
+            let mut contents = String::new();
+            file.read_to_string(&mut contents).unwrap();
+
+            // Check that the contents of the .txt file are what we expect
+            assert!(contents.contains("class"));
+            assert!(contents.contains(class));
+
+            // Check that the contents of the .txt file does not contain docstrings
+            assert!(!contents.contains("\"\"\""));
+            assert!(!contents.contains("'''"));
+
+            // If the class is Calculator, check that the decorators are present
+            if class == "Calculator" {
+                assert!(contents.contains("@staticmethod"));
+                assert!(contents.contains("@classmethod"));
+            }
         }
 
-        let expected_tokens = vec!["def", "foo", "(", ")", ":", "return", "42"];
+        for function in functions {
+            // The expected path to the .txt file for this function
+            let expected_file_path =
+                format!("{}/{}_function_{}.txt", output_dir, module_name, function);
 
-        let tokens = read_file_and_parse(temp_file_path);
-        assert_eq!(tokens, expected_tokens);
+            // Check that the .txt file exists
+            assert!(fs::metadata(&expected_file_path).is_ok());
 
-        // Clean up the temporary file
-        std::fs::remove_file(temp_file_path).unwrap();
-    }
+            // Open the file and read its contents
+            let mut file = fs::File::open(&expected_file_path).unwrap();
+            let mut contents = String::new();
+            file.read_to_string(&mut contents).unwrap();
 
-    #[test]
-    fn test_read_python_file_and_parse() {
-        let sample_file_path = "code_harvester/samples/sample.py";
+            // Check that the contents of the .txt file are what we expect
+            assert!(contents.contains("def"));
+            assert!(contents.contains(function));
 
-        let expected_tokens = vec![
-            "def", "foo", "(", ")", ":", "return", "42", "class", "Bar", ":", "def", "__init__",
-            "(", "self", ",", "x", ")", ":", "self", ".", "x", "=", "x", "def", "get_x", "(",
-            "self", ")", ":", "return", "self", ".", "x",
-        ];
-
-        let tokens = read_file_and_parse(sample_file_path);
-        assert_eq!(tokens, expected_tokens);
-    }
-
-    #[test]
-    fn test_extract_code_structures() {
-        let code = "def foo():\n    return 42\n\nclass Bar:\n    def __init__(self, x):\n        self.x = x\n\n    def get_x(self):\n        return self.x\n";
-        let mut actual = extract_code_structures(code);
-        let mut expected = vec![
-            CodeStructure::Function("def foo():\n    return 42".to_string()),
-            CodeStructure::Class("class Bar:\n    def __init__(self, x):\n        self.x = x\n\n    def get_x(self):\n        return self.x".to_string()),
-        ];
-
-        actual.sort();
-        expected.sort();
-
-        println!("Actual: {:?}", actual);
-        println!("Expected: {:?}", expected);
-
-        assert_eq!(actual, expected);
+            // Check that the contents of the .txt file does not contain docstrings
+            assert!(!contents.contains("\"\"\""));
+            assert!(!contents.contains("'''"));
+        }
     }
 }
